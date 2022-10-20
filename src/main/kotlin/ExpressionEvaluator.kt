@@ -1,5 +1,7 @@
+import kotlin.math.exp
+
 interface ExpressionEvaluator {
-    suspend fun evaluate(expression: Expression): Boolean
+    suspend fun evaluate(expression: BoolExpression): Boolean
 }
 
 class ExpressionEvaluatorComposite(
@@ -7,13 +9,17 @@ class ExpressionEvaluatorComposite(
     private val orExpressionEvaluator: OrExpressionEvaluator,
     private val notExpressionEvaluator: NotExpressionEvaluator,
     private val constantExpressionEvaluator: ConstantExpressionEvaluator,
+    private val equalsExpressionEvaluator: EqualsExpressionEvaluator,
+    private val greaterThanExpressionEvaluator: GreaterThanExpressionEvaluator,
 ) : ExpressionEvaluator {
-    override suspend fun evaluate(expression: Expression): Boolean {
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
         val original: ExpressionEvaluator = when (expression) {
-            is Expression.And -> andExpressionEvaluator
-            is Expression.Or -> orExpressionEvaluator
-            is Expression.Not -> notExpressionEvaluator
-            is Expression.Constant -> constantExpressionEvaluator
+            is BoolExpression.And -> andExpressionEvaluator
+            is BoolExpression.Or -> orExpressionEvaluator
+            is BoolExpression.Not -> notExpressionEvaluator
+            is BoolExpression.Constant -> constantExpressionEvaluator
+            is BoolExpression.Equals<*> -> equalsExpressionEvaluator
+            is BoolExpression.GreaterThan<*> -> greaterThanExpressionEvaluator
         }
 
         return original.evaluate(expression)
@@ -23,7 +29,7 @@ class ExpressionEvaluatorComposite(
 class ExpressionEvaluatorProxy : ExpressionEvaluator {
     var original: ExpressionEvaluator? = null
 
-    override suspend fun evaluate(expression: Expression): Boolean {
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
         return original!!.evaluate(expression)
     }
 }
@@ -31,9 +37,9 @@ class ExpressionEvaluatorProxy : ExpressionEvaluator {
 class AndExpressionEvaluator(
     private val delegate: ExpressionEvaluator,
 ) : ExpressionEvaluator {
-    override suspend fun evaluate(expression: Expression): Boolean {
-        require(expression is Expression.And) {
-            "Given Expression should be ${Expression.And::class.simpleName}, actual=${expression::class.java.simpleName}"
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
+        require(expression is BoolExpression.And) {
+            "Given Expression should be ${BoolExpression.And::class.simpleName}, actual=${expression::class.java.simpleName}"
         }
 
         for (innerExpression in expression.expressions) {
@@ -49,9 +55,9 @@ class AndExpressionEvaluator(
 class OrExpressionEvaluator(
     private val delegate: ExpressionEvaluator,
 ) : ExpressionEvaluator {
-    override suspend fun evaluate(expression: Expression): Boolean {
-        require(expression is Expression.Or) {
-            "Given Expression should be ${Expression.Or::class.simpleName}, actual=${expression::class.java.simpleName}"
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
+        require(expression is BoolExpression.Or) {
+            "Given Expression should be ${BoolExpression.Or::class.simpleName}, actual=${expression::class.java.simpleName}"
         }
 
         for (innerExpression in expression.expressions) {
@@ -67,9 +73,9 @@ class OrExpressionEvaluator(
 class NotExpressionEvaluator(
     private val delegate: ExpressionEvaluator,
 ) : ExpressionEvaluator {
-    override suspend fun evaluate(expression: Expression): Boolean {
-        require(expression is Expression.Not) {
-            "Given Expression should be ${Expression.Not::class.simpleName}, actual=${expression::class.java.simpleName}"
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
+        require(expression is BoolExpression.Not) {
+            "Given Expression should be ${BoolExpression.Not::class.simpleName}, actual=${expression::class.java.simpleName}"
         }
 
         return !delegate.evaluate(expression.expression)
@@ -77,11 +83,37 @@ class NotExpressionEvaluator(
 }
 
 class ConstantExpressionEvaluator : ExpressionEvaluator {
-    override suspend fun evaluate(expression: Expression): Boolean {
-        require(expression is Expression.Constant) {
-            "Given Expression should be ${Expression.Constant::class.simpleName}, actual=${expression::class.java.simpleName}"
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
+        require(expression is BoolExpression.Constant) {
+            "Given Expression should be ${BoolExpression.Constant::class.simpleName}, actual=${expression::class.java.simpleName}"
         }
 
         return expression.value
+    }
+}
+
+class EqualsExpressionEvaluator(
+    private val valueEvaluator: ValueEvaluator,
+) : ExpressionEvaluator {
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
+        require(expression is BoolExpression.Equals<*>) {
+            "Given Expression should be ${BoolExpression.Equals::class.simpleName}, actual=${expression::class.java.simpleName}"
+        }
+
+        return valueEvaluator.evaluate(expression.left) == valueEvaluator.evaluate(expression.right)
+    }
+}
+
+class GreaterThanExpressionEvaluator(
+    private val valueEvaluator: ValueEvaluator,
+) : ExpressionEvaluator {
+    override suspend fun evaluate(expression: BoolExpression): Boolean {
+        require(expression is BoolExpression.GreaterThan<*>) {
+            "Given Expression should be ${BoolExpression.GreaterThan::class.simpleName}, actual=${expression::class.java.simpleName}"
+        }
+
+        val lhs = valueEvaluator.evaluate(expression.left)
+        val rhs = valueEvaluator.evaluate(expression.right)
+        return (lhs as Comparable<Any?>).compareTo(rhs) != -1
     }
 }
